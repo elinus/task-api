@@ -6,7 +6,7 @@ mod models;
 
 use axum::{
     Router,
-    routing::{get, post},
+    routing::{delete, get, post, put},
 };
 use tower_http::cors::CorsLayer;
 use tracing_subscriber;
@@ -31,6 +31,8 @@ async fn main() {
         .route("/api/tasks", get(handlers::tasks::list_tasks))
         .route("/api/tasks/{id}", get(handlers::tasks::get_task))
         .route("/api/tasks", post(handlers::tasks::create_task))
+        .route("/api/tasks/{id}", put(handlers::tasks::update_task))
+        .route("/api/tasks/{id}", delete(handlers::tasks::delete_task))
         .layer(CorsLayer::permissive())
         .with_state(pool);
 

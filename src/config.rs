@@ -11,7 +11,8 @@ impl Config {
         dotenv::dotenv().ok();
 
         Self {
-            database_url: env::var("DATABASE_URL").expect("DATABASE_URL must be set"),
+            database_url: env::var("DATABASE_URL")
+                .expect("DATABASE_URL must be set"),
             server_port: env::var("PORT")
                 .unwrap_or_else(|_| "3000".to_string())
                 .parse()

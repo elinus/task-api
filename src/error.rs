@@ -4,11 +4,13 @@ use axum::{
     response::{IntoResponse, Response},
 };
 use serde_json::json;
+use validator::ValidationErrors;
 
 #[derive(Debug)]
 pub enum AppError {
     DatabaseError(sqlx::Error),
     NotFound,
+    ValidationError(ValidationErrors),
     InternalError(String),
 }
 
@@ -22,7 +24,12 @@ impl IntoResponse for AppError {
                     "Database error".to_string(),
                 )
             }
-            AppError::NotFound => (StatusCode::NOT_FOUND, "Resource not found".to_string()),
+            AppError::NotFound => {
+                (StatusCode::NOT_FOUND, "Resource not found".to_string())
+            }
+            AppError::ValidationError(e) => {
+                (StatusCode::BAD_REQUEST, format!("Validation error: {}", e))
+            }
             AppError::InternalError(msg) => {
                 tracing::error!("Internal error: {:?}", msg);
                 (StatusCode::INTERNAL_SERVER_ERROR, msg)
@@ -38,6 +45,12 @@ impl IntoResponse for AppError {
 impl From<sqlx::Error> for AppError {
     fn from(err: sqlx::Error) -> Self {
         AppError::DatabaseError(err)
+    }
+}
+
+impl From<ValidationErrors> for AppError {
+    fn from(err: ValidationErrors) -> Self {
+        AppError::ValidationError(err)
     }
 }
 
