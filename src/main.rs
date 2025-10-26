@@ -44,6 +44,7 @@ async fn main() {
         .route("/api/tasks", post(handlers::tasks::create_task))
         .route("/api/tasks/{id}", put(handlers::tasks::update_task))
         .route("/api/tasks/{id}", delete(handlers::tasks::delete_task))
+        .route("/auth/whoami", get(handlers::auth::whoami))
         .layer(axum_middleware::from_fn_with_state(
             app_state.clone(),
             middleware::auth::auth_middleware,

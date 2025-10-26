@@ -17,7 +17,7 @@ pub async fn list_tasks(
     State(state): State<AppState>,
     Query(params): Query<TaskQuery>,
 ) -> Result<Json<Vec<Task>>> {
-    // Build dynamic query based on filters
+    // Build a dynamic query based on filters
     let mut query = String::from("SELECT * FROM tasks WHERE 1=1");
     if params.status.is_some() {
         query.push_str(" AND status = $1");
@@ -147,7 +147,7 @@ pub async fn update_task(
     Path(id): Path<Uuid>,
     Json(payload): Json<UpdateTaskRequest>,
 ) -> Result<Json<Task>> {
-    // First, check if task exists
+    // First, check if a task exists
     let existing =
         sqlx::query_as::<_, Task>("SELECT * FROM tasks WHERE id = $1")
             .bind(id)
@@ -196,7 +196,7 @@ pub async fn delete_task(
 ) -> Result<StatusCode> {
     let user_id = claims.user_id()?;
     let result = sqlx::query!(
-        "DELETE FROM tasks WHERE id = $1 AND created_by = $2",
+        r#"DELETE FROM tasks WHERE id = $1 AND created_by = $2"#,
         id,
         user_id
     )
@@ -214,14 +214,18 @@ pub async fn admin_delete_any_task(
     State(state): State<AppState>,
     Path(id): Path<Uuid>,
 ) -> Result<StatusCode> {
-    // Middleware already checked role, but let's be explicit
+    // Middleware already checked a role, but let's be explicit
     if claims.role != "admin" {
         return Err(crate::error::AppError::Unauthorized(
             "Admin access required".to_string(),
         ));
     }
 
-    let result = sqlx::query!("DELETE FROM tasks WHERE id = $1", id)
+    let result = sqlx::query!(r#"
+        DELETE FROM tasks
+        WHERE id = $1
+        "#,
+        id)
         .execute(&state.pool)
         .await?;
 

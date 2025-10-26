@@ -11,7 +11,6 @@ pub struct Config {
 impl Config {
     pub fn from_env() -> Self {
         dotenv::dotenv().ok();
-
         Self {
             database_url: env::var("DATABASE_URL")
                 .expect("DATABASE_URL must be set"),

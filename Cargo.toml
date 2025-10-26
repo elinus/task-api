@@ -3,6 +3,18 @@ name = "task_api"
 version = "0.1.0"
 edition = "2024"
 
+[[bin]]
+name = "hash_timing"
+path = "src/bin/hash_timing.rs"
+
+[[bin]]
+name = "bcrypt_demo"
+path = "src/bin/bcrypt_demo.rs"
+
+[[bin]]
+name = "tamper_token"
+path = "src/bin/tamper_token.rs"
+
 [dependencies]
 #Web framework
 axum = "0.8.6"
@@ -38,3 +50,4 @@ bcrypt = "0.17.1"
 # For middleware
 axum-extra = { version = "0.10.3", features = ["typed-header"] }
 async-trait = "0.1.89"
+base64 = "0.22.1"

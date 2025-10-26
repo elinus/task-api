@@ -77,3 +77,4 @@ cargo run
 ## Progress
 - Day 1: ✅ Basic CRUD
 - Day 2: ✅ Update/Delete, Filters, Validation
+- Day 3: ✅ JWT Auth, Password Hashing, RBAC

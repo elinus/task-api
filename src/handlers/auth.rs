@@ -1,10 +1,8 @@
-use axum::{Json, extract::State};
+use axum::{Json, extract::State, Extension};
 use bcrypt::{DEFAULT_COST, hash, verify};
-use sqlx::PgPool;
 use validator::Validate;
 
 use crate::{
-    config::Config,
     error::Result,
     models::{AuthResponse, LoginRequest, RegisterRequest, User},
     state::AppState,
@@ -24,7 +22,7 @@ pub async fn register(
         crate::error::AppError::InternalError(format!("Hashing failed: {}", e))
     })?;
 
-    // Create user in database
+    // Create a user in the database
     let user = sqlx::query_as::<_, User>(
         r#"
         INSERT INTO users (email, password_hash, role)
@@ -112,4 +110,19 @@ pub async fn login(
         user_id: user.id.to_string(),
         email: user.email,
     }))
+}
+
+// Debug endpoint: decode your own token
+pub async fn whoami(
+    State(state): State<AppState>,
+    Extension(claims): Extension<Claims>,
+) -> Result<Json<serde_json::Value>> {
+    Ok(Json(serde_json::json!({
+        "user_id": claims.sub,
+        "email": claims.email,
+        "role": claims.role,
+        "issued_at": claims.iat,
+        "expires_at": claims.exp,
+        "time_until_expiry_seconds": claims.exp - chrono::Utc::now().timestamp(),
+    })))
 }
