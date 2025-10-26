@@ -11,6 +11,7 @@ pub enum AppError {
     DatabaseError(sqlx::Error),
     NotFound,
     ValidationError(ValidationErrors),
+    Unauthorized(String),
     InternalError(String),
 }
 
@@ -30,6 +31,7 @@ impl IntoResponse for AppError {
             AppError::ValidationError(e) => {
                 (StatusCode::BAD_REQUEST, format!("Validation error: {}", e))
             }
+            AppError::Unauthorized(msg) => (StatusCode::UNAUTHORIZED, msg),
             AppError::InternalError(msg) => {
                 tracing::error!("Internal error: {:?}", msg);
                 (StatusCode::INTERNAL_SERVER_ERROR, msg)

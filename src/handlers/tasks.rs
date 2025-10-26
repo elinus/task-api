@@ -1,19 +1,20 @@
 use crate::{
     error::Result,
     models::{CreateTaskRequest, Task, TaskQuery, UpdateTaskRequest},
+    state::AppState,
+    utils::jwt::Claims,
 };
 use axum::{
-    Json,
+    Extension, Json,
     extract::{Path, Query, State},
     http::StatusCode,
 };
-use sqlx::PgPool;
 use uuid::Uuid;
 use validator::Validate;
 
 // List tasks with filters
 pub async fn list_tasks(
-    State(pool): State<PgPool>,
+    State(state): State<AppState>,
     Query(params): Query<TaskQuery>,
 ) -> Result<Json<Vec<Task>>> {
     // Build dynamic query based on filters
@@ -42,7 +43,7 @@ pub async fn list_tasks(
             sqlx::query_as::<_, Task>(
                 "SELECT * FROM tasks ORDER BY created_at DESC",
             )
-            .fetch_all(&pool)
+            .fetch_all(&state.pool)
             .await?
         }
         (Some(status), None, None, None) => {
@@ -51,7 +52,7 @@ pub async fn list_tasks(
                 "SELECT * FROM tasks WHERE status = $1 ORDER BY created_at DESC",
             )
             .bind(status)
-            .fetch_all(&pool)
+            .fetch_all(&state.pool)
             .await?
         }
         (None, Some(priority), None, None) => {
@@ -60,7 +61,7 @@ pub async fn list_tasks(
                 "SELECT * FROM tasks WHERE priority = $1 ORDER BY created_at DESC",
             )
             .bind(priority)
-            .fetch_all(&pool)
+            .fetch_all(&state.pool)
             .await?
         }
         (Some(status), Some(priority), None, None) => {
@@ -70,7 +71,7 @@ pub async fn list_tasks(
             )
             .bind(status)
             .bind(priority)
-            .fetch_all(&pool)
+            .fetch_all(&state.pool)
             .await?
         }
         (None, None, Some(assigned_to), None) => {
@@ -79,7 +80,7 @@ pub async fn list_tasks(
                 "SELECT * FROM tasks WHERE assigned_to = $1 ORDER BY created_at DESC",
             )
             .bind(assigned_to)
-            .fetch_all(&pool)
+            .fetch_all(&state.pool)
             .await?
         }
         // Add more combinations as needed...
@@ -88,7 +89,7 @@ pub async fn list_tasks(
             sqlx::query_as::<_, Task>(
                 "SELECT * FROM tasks ORDER BY created_at DESC",
             )
-            .fetch_all(&pool)
+            .fetch_all(&state.pool)
             .await?
         }
     };
@@ -98,12 +99,12 @@ pub async fn list_tasks(
 
 // Get single task
 pub async fn get_task(
-    State(pool): State<PgPool>,
+    State(state): State<AppState>,
     Path(id): Path<Uuid>,
 ) -> Result<Json<Task>> {
     let task = sqlx::query_as::<_, Task>("SELECT * FROM tasks WHERE id = $1")
         .bind(id)
-        .fetch_optional(&pool)
+        .fetch_optional(&state.pool)
         .await?
         .ok_or(crate::error::AppError::NotFound)?;
     Ok(Json(task))
@@ -111,19 +112,14 @@ pub async fn get_task(
 
 // Create task
 pub async fn create_task(
-    State(pool): State<PgPool>,
+    Extension(claims): Extension<Claims>,
+    State(state): State<AppState>,
     Json(payload): Json<CreateTaskRequest>,
 ) -> Result<Json<Task>> {
     // Validate input
     payload.validate()?;
 
-    // For now, hardcode created_by to our test user
-    // We'll add auth later
-    let test_user_id = sqlx::query_scalar::<_, Uuid>(
-        "SELECT id FROM users WHERE email = 'test@example.com'",
-    )
-    .fetch_one(&pool)
-    .await?;
+    let created_by = claims.user_id()?;
 
     let task = sqlx::query_as::<_, Task>(
         r#"
@@ -136,9 +132,9 @@ pub async fn create_task(
     .bind(&payload.description)
     .bind(payload.priority.unwrap_or_else(|| "medium".to_string()))
     .bind(payload.assigned_to)
-    .bind(test_user_id)
+    .bind(created_by)
     .bind(payload.due_date)
-    .fetch_one(&pool)
+    .fetch_one(&state.pool)
     .await?;
 
     Ok(Json(task))
@@ -146,7 +142,8 @@ pub async fn create_task(
 
 // Update task
 pub async fn update_task(
-    State(pool): State<PgPool>,
+    Extension(_claims): Extension<Claims>,
+    State(state): State<AppState>,
     Path(id): Path<Uuid>,
     Json(payload): Json<UpdateTaskRequest>,
 ) -> Result<Json<Task>> {
@@ -154,13 +151,13 @@ pub async fn update_task(
     let existing =
         sqlx::query_as::<_, Task>("SELECT * FROM tasks WHERE id = $1")
             .bind(id)
-            .fetch_optional(&pool)
+            .fetch_optional(&state.pool)
             .await?
             .ok_or(crate::error::AppError::NotFound)?;
 
     // Build dynamic update query
     // let mut query_parts = Vec::new();
-    let mut param_count = 1;
+    // let mut param_count = 1;
 
     // We'll use a different approach - update all fields
     let title = payload.title.unwrap_or(existing.title);
@@ -185,7 +182,7 @@ pub async fn update_task(
     .bind(assigned_to)
     .bind(due_date)
     .bind(id)
-    .fetch_one(&pool)
+    .fetch_one(&state.pool)
     .await?;
 
     Ok(Json(task))
@@ -193,14 +190,44 @@ pub async fn update_task(
 
 // Delete task
 pub async fn delete_task(
-    State(pool): State<PgPool>,
+    Extension(claims): Extension<Claims>,
+    State(state): State<AppState>,
     Path(id): Path<Uuid>,
 ) -> Result<StatusCode> {
-    let result = sqlx::query!("DELETE FROM tasks WHERE id = $1", id)
-        .execute(&pool)
-        .await?;
+    let user_id = claims.user_id()?;
+    let result = sqlx::query!(
+        "DELETE FROM tasks WHERE id = $1 AND created_by = $2",
+        id,
+        user_id
+    )
+    .execute(&state.pool)
+    .await?;
     if result.rows_affected() == 0 {
         return Err(crate::error::AppError::NotFound);
     }
+    Ok(StatusCode::NO_CONTENT)
+}
+
+// Admin-only: Delete ANY task
+pub async fn admin_delete_any_task(
+    Extension(claims): Extension<Claims>,
+    State(state): State<AppState>,
+    Path(id): Path<Uuid>,
+) -> Result<StatusCode> {
+    // Middleware already checked role, but let's be explicit
+    if claims.role != "admin" {
+        return Err(crate::error::AppError::Unauthorized(
+            "Admin access required".to_string(),
+        ));
+    }
+
+    let result = sqlx::query!("DELETE FROM tasks WHERE id = $1", id)
+        .execute(&state.pool)
+        .await?;
+
+    if result.rows_affected() == 0 {
+        return Err(crate::error::AppError::NotFound);
+    }
+
     Ok(StatusCode::NO_CONTENT)
 }

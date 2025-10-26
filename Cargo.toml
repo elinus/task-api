@@ -30,3 +30,11 @@ tracing-subscriber = "0.3.20"
 #Error handling
 anyhow = "1.0.100"
 thiserror = "2.0.17"
+
+# Authentication //-->> For password hashing, we need argon2 (more modern than bcrypt)
+jsonwebtoken = {version = "10.1.0", features = ["rust_crypto"]}
+bcrypt = "0.17.1"
+
+# For middleware
+axum-extra = { version = "0.10.3", features = ["typed-header"] }
+async-trait = "0.1.89"

@@ -8,7 +8,7 @@ pub struct User {
     pub id: Uuid,
     pub email: String,
     #[serde(skip_serializing)]
-    pub passward_hash: String,
+    pub password_hash: String,
     pub role: String,
     pub created_at: DateTime<Utc>,
     pub updated_at: DateTime<Utc>,

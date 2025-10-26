@@ -4,6 +4,8 @@ use std::env;
 pub struct Config {
     pub database_url: String,
     pub server_port: u16,
+    pub jwt_secret: String,
+    pub jwt_expiration_hours: i64,
 }
 
 impl Config {
@@ -16,7 +18,12 @@ impl Config {
             server_port: env::var("PORT")
                 .unwrap_or_else(|_| "3000".to_string())
                 .parse()
-                .expect("DATABASE_URL must be set"),
+                .expect("DATABASE_URL must be number"),
+            jwt_secret: env::var("JWT_SECRET").expect("JWT_SECRET must be set"),
+            jwt_expiration_hours: env::var("JWT_EXPIRATION_HOURS")
+                .unwrap_or_else(|_| "24".to_string())
+                .parse()
+                .expect("JWT_EXPIRATION_HOURS must be a number"),
         }
     }
 }

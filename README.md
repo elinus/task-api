@@ -1,23 +1,35 @@
 # Task Management API
 
-REST API built with Rust, Axum, and PostgreSQL.
+REST API JWT authentication built with Rust, Axum, and PostgreSQL.
 
 ## Features
 - ✅ Full CRUD operations
-- ✅ Query filtering (status, priority, assigned_to)
+- ✅ JWT authentication
+- ✅ Password hashing (bcrypt)
+- ✅ Role-based access control
+- ✅ Protected routes
 - ✅ Input validation
-- ✅ Proper error handling
-- ✅ PostgreSQL with migrations
+- ✅ Query filtering
 
-## API Endpoints
-
-### Tasks
+### Public (No Authentication)
 ```
-GET    /api/tasks              - List all tasks (with optional filters)
+GET  /health                   - Health check
+POST /auth/register            - Register new user
+POST /auth/login               - Login user
+```
+
+### Protected (Requires JWT Token)
+```
+GET    /api/tasks              - List all tasks (with filters)
 GET    /api/tasks/:id          - Get single task
 POST   /api/tasks              - Create task
 PUT    /api/tasks/:id          - Update task
-DELETE /api/tasks/:id          - Delete task
+DELETE /api/tasks/:id          - Delete task (own tasks only)
+```
+
+### Admin Only
+```
+DELETE /admin/tasks/:id        - Delete any task
 ```
 
 ### Query Parameters
