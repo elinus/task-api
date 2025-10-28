@@ -21,14 +21,12 @@ pub async fn auth_middleware(
         .headers()
         .get("Authorization")
         .and_then(|h| h.to_str().ok())
-        .ok_or(AppError::Unauthorized(
-            "Missing authorization header".to_string(),
-        ))?;
+        .ok_or(AppError::Unauthorized("Missing authorization header".to_string()))?;
 
     // Check if it starts with "Bearer "
-    let token = auth_header.strip_prefix("Bearer ").ok_or(
-        AppError::Unauthorized("Invalid authorization format".to_string()),
-    )?;
+    let token = auth_header
+        .strip_prefix("Bearer ")
+        .ok_or(AppError::Unauthorized("Invalid authorization format".to_string()))?;
 
     // Verify token
     let claims = verify_token(token, &state.config.jwt_secret)?;
@@ -41,10 +39,7 @@ pub async fn auth_middleware(
 }
 
 // Optional: Middleware to check for admin role
-pub async fn admin_middleware(
-    mut request: Request,
-    next: Next,
-) -> Result<Response, AppError> {
+pub async fn admin_middleware(mut request: Request, next: Next) -> Result<Response, AppError> {
     // Get claims from extensions (added by auth_middleware)
     let claims = request
         .extensions()
@@ -53,9 +48,7 @@ pub async fn admin_middleware(
 
     // Check if user is admin
     if claims.role != "admin" {
-        return Err(AppError::Unauthorized(
-            "Admin access required".to_string(),
-        ));
+        return Err(AppError::Unauthorized("Admin access required".to_string()));
     }
 
     Ok(next.run(request).await)

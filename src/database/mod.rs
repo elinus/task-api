@@ -1,3 +1,6 @@
+pub mod audit_repo;
+pub mod dependency_repo;
+
 use sqlx::{PgPool, postgres::PgPoolOptions};
 
 pub async fn create_pool(database_url: &str) -> Result<PgPool, sqlx::Error> {

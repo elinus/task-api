@@ -19,9 +19,7 @@ fn main() {
     println!();
 
     // Decode payload
-    let payload_bytes = general_purpose::STANDARD_NO_PAD
-        .decode(parts[1])
-        .unwrap();
+    let payload_bytes = general_purpose::STANDARD_NO_PAD.decode(parts[1]).unwrap();
     let payload = String::from_utf8(payload_bytes).unwrap();
 
     println!("Decoded payload:");
@@ -29,8 +27,7 @@ fn main() {
     println!();
 
     let tampered_payload = r#"{"sub":"999","email":"hacker@evil.com","role":"admin"}"#;
-    let tampered_payload_b64 = general_purpose::STANDARD_NO_PAD
-        .encode(tampered_payload.as_bytes());
+    let tampered_payload_b64 = general_purpose::STANDARD_NO_PAD.encode(tampered_payload.as_bytes());
 
     let tampered_token = format!("{}.{}.{}", parts[0], tampered_payload_b64, parts[2]);
 

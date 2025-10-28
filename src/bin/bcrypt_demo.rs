@@ -1,4 +1,4 @@
-use bcrypt::{hash, verify, DEFAULT_COST};
+use bcrypt::{DEFAULT_COST, hash, verify};
 
 fn main() {
     println!("##### Bcrypt Demo! #####");
@@ -12,7 +12,7 @@ fn main() {
 
     println!("\nNotice: All different! Each has random salt.");
     println!("But all verify correctly:\n");
-    
+
     for i in 1..=5 {
         let hash = hash(password, DEFAULT_COST).unwrap();
         let valid = verify(password, &hash).unwrap();

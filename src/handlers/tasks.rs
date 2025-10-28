@@ -1,5 +1,6 @@
 use crate::{
-    error::Result,
+    database::{audit_repo::AuditRepository, dependency_repo::DependencyRepository},
+    error::{AppError, Result},
     models::{CreateTaskRequest, Task, TaskQuery, UpdateTaskRequest},
     state::AppState,
     utils::jwt::Claims,
@@ -9,6 +10,7 @@ use axum::{
     extract::{Path, Query, State},
     http::StatusCode,
 };
+use serde_json::json;
 use uuid::Uuid;
 use validator::Validate;
 
@@ -32,19 +34,12 @@ pub async fn list_tasks(
         query.push_str(" AND status = $4");
     }
     query.push_str(" ORDER BY created_at DESC");
-    let tasks = match (
-        params.status,
-        params.priority,
-        params.assigned_to,
-        params.created_by,
-    ) {
+    let tasks = match (params.status, params.priority, params.assigned_to, params.created_by) {
         (None, None, None, None) => {
             // No filters
-            sqlx::query_as::<_, Task>(
-                "SELECT * FROM tasks ORDER BY created_at DESC",
-            )
-            .fetch_all(&state.pool)
-            .await?
+            sqlx::query_as::<_, Task>("SELECT * FROM tasks ORDER BY created_at DESC")
+                .fetch_all(&state.pool)
+                .await?
         }
         (Some(status), None, None, None) => {
             // Filter by status only
@@ -86,22 +81,17 @@ pub async fn list_tasks(
         // Add more combinations as needed...
         _ => {
             // For now, return all if combination not handled
-            sqlx::query_as::<_, Task>(
-                "SELECT * FROM tasks ORDER BY created_at DESC",
-            )
-            .fetch_all(&state.pool)
-            .await?
+            sqlx::query_as::<_, Task>("SELECT * FROM tasks ORDER BY created_at DESC")
+                .fetch_all(&state.pool)
+                .await?
         }
     };
 
     Ok(Json(tasks))
 }
 
-// Get single task
-pub async fn get_task(
-    State(state): State<AppState>,
-    Path(id): Path<Uuid>,
-) -> Result<Json<Task>> {
+// Get a single task
+pub async fn get_task(State(state): State<AppState>, Path(id): Path<Uuid>) -> Result<Json<Task>> {
     let task = sqlx::query_as::<_, Task>("SELECT * FROM tasks WHERE id = $1")
         .bind(id)
         .fetch_optional(&state.pool)
@@ -110,7 +100,7 @@ pub async fn get_task(
     Ok(Json(task))
 }
 
-// Create task
+// Create a task
 pub async fn create_task(
     Extension(claims): Extension<Claims>,
     State(state): State<AppState>,
@@ -137,53 +127,119 @@ pub async fn create_task(
     .fetch_one(&state.pool)
     .await?;
 
+    // Audit log
+    let audit_repo = AuditRepository::new(state.pool.clone());
+    audit_repo
+        .log_action(
+            created_by,
+            "CREATE",
+            "task",
+            task.id,
+            Some(json!({})), // None -> No old values. None is getting error.
+            Some(json!({
+                "title": task.title,
+                "description": task.description,
+                "priority": task.priority,
+            })),
+            None, // IP address can be extracted from request
+            None, // User agent can be extracted from request
+        )
+        .await?;
+
     Ok(Json(task))
 }
 
 // Update task
 pub async fn update_task(
-    Extension(_claims): Extension<Claims>,
+    Extension(claims): Extension<Claims>,
     State(state): State<AppState>,
     Path(id): Path<Uuid>,
     Json(payload): Json<UpdateTaskRequest>,
 ) -> Result<Json<Task>> {
+    payload.validate()?;
+    let user_id = claims.user_id()?;
+
     // First, check if a task exists
-    let existing =
-        sqlx::query_as::<_, Task>("SELECT * FROM tasks WHERE id = $1")
-            .bind(id)
-            .fetch_optional(&state.pool)
-            .await?
-            .ok_or(crate::error::AppError::NotFound)?;
+    let existing = sqlx::query_as::<_, Task>("SELECT * FROM tasks WHERE id = $1")
+        .bind(id)
+        .fetch_optional(&state.pool)
+        .await?
+        .ok_or(crate::error::AppError::NotFound)?;
 
-    // Build dynamic update query
-    // let mut query_parts = Vec::new();
-    // let mut param_count = 1;
+    // Check if trying to complete
+    let new_status = payload.status.clone().unwrap_or(existing.status.clone());
 
-    // We'll use a different approach - update all fields
-    let title = payload.title.unwrap_or(existing.title);
-    let description = payload.description.or(existing.description);
-    let status = payload.status.unwrap_or(existing.status);
-    let priority = payload.priority.unwrap_or(existing.priority);
+    if new_status == "completed" && existing.status != "completed" {
+        // Trying to complete - check dependencies
+        let dep_repo = DependencyRepository::new(state.pool.clone());
+
+        if !dep_repo.can_complete_task(id).await? {
+            return Err(AppError::ValidationError(validator::ValidationErrors::new()));
+        }
+    }
+
+    // Build update
+    let title = payload.title.unwrap_or(existing.title.clone());
+    let description = payload.description.or(existing.description.clone());
+    let priority = payload.priority.unwrap_or(existing.priority.clone());
     let assigned_to = payload.assigned_to.or(existing.assigned_to);
     let due_date = payload.due_date.or(existing.due_date);
+
+    // Set completed_at if completing
+    let completed_at = if new_status == "completed" && existing.status != "completed" {
+        Some(chrono::Utc::now())
+    } else if new_status != "completed" {
+        None
+    } else {
+        existing.completed_at
+    };
 
     let task = sqlx::query_as::<_, Task>(
         r#"
         UPDATE tasks
-        SET title = $1, description = $2, status = $3, priority = $4,
-        assigned_to = $5, due_date = $6, updated_at = NOW()
-        WHERE id = $7
-        RETURNING *"#,
+        SET title = $1,
+            description = $2,
+            status = $3,
+            priority = $4,
+            assigned_to = $5,
+            due_date = $6,
+            completed_at = $7,
+            updated_at = NOW()
+        WHERE id = $8
+        RETURNING *
+        "#,
     )
     .bind(title)
     .bind(description)
-    .bind(status)
-    .bind(priority)
+    .bind(&new_status)
+    .bind(&priority)
     .bind(assigned_to)
     .bind(due_date)
+    .bind(completed_at)
     .bind(id)
     .fetch_one(&state.pool)
     .await?;
+
+    // Audit log
+    let audit_repo = AuditRepository::new(state.pool.clone());
+    audit_repo
+        .log_action(
+            user_id,
+            "UPDATE",
+            "task",
+            task.id,
+            Some(json!({
+                "status": existing.status,
+                "priority": existing.priority,
+            })),
+            Some(json!({
+                "status": new_status,
+                "priority": priority,
+            })),
+            None,
+            None,
+        )
+        .await?;
 
     Ok(Json(task))
 }
@@ -195,16 +251,19 @@ pub async fn delete_task(
     Path(id): Path<Uuid>,
 ) -> Result<StatusCode> {
     let user_id = claims.user_id()?;
-    let result = sqlx::query!(
-        r#"DELETE FROM tasks WHERE id = $1 AND created_by = $2"#,
-        id,
-        user_id
-    )
-    .execute(&state.pool)
-    .await?;
+    let result =
+        sqlx::query!(r#"DELETE FROM tasks WHERE id = $1 AND created_by = $2"#, id, user_id)
+            .execute(&state.pool)
+            .await?;
+
+    // Audit log
+    let audit_repo = AuditRepository::new(state.pool.clone());
+    audit_repo.log_action(user_id, "DELETE", "task", id, None, None, None, None).await?;
+
     if result.rows_affected() == 0 {
         return Err(crate::error::AppError::NotFound);
     }
+
     Ok(StatusCode::NO_CONTENT)
 }
 
@@ -216,18 +275,18 @@ pub async fn admin_delete_any_task(
 ) -> Result<StatusCode> {
     // Middleware already checked a role, but let's be explicit
     if claims.role != "admin" {
-        return Err(crate::error::AppError::Unauthorized(
-            "Admin access required".to_string(),
-        ));
+        return Err(crate::error::AppError::Unauthorized("Admin access required".to_string()));
     }
 
-    let result = sqlx::query!(r#"
+    let result = sqlx::query!(
+        r#"
         DELETE FROM tasks
         WHERE id = $1
         "#,
-        id)
-        .execute(&state.pool)
-        .await?;
+        id
+    )
+    .execute(&state.pool)
+    .await?;
 
     if result.rows_affected() == 0 {
         return Err(crate::error::AppError::NotFound);

@@ -20,14 +20,9 @@ impl IntoResponse for AppError {
         let (status, message) = match self {
             AppError::DatabaseError(e) => {
                 tracing::error!("Database error: {:?}", e);
-                (
-                    StatusCode::INTERNAL_SERVER_ERROR,
-                    "Database error".to_string(),
-                )
+                (StatusCode::INTERNAL_SERVER_ERROR, "Database error".to_string())
             }
-            AppError::NotFound => {
-                (StatusCode::NOT_FOUND, "Resource not found".to_string())
-            }
+            AppError::NotFound => (StatusCode::NOT_FOUND, "Resource not found".to_string()),
             AppError::ValidationError(e) => {
                 (StatusCode::BAD_REQUEST, format!("Validation error: {}", e))
             }

@@ -1,4 +1,4 @@
-use axum::{Json, extract::State, Extension};
+use axum::{Extension, Json, extract::State};
 use bcrypt::{DEFAULT_COST, hash, verify};
 use validator::Validate;
 
@@ -18,9 +18,8 @@ pub async fn register(
     payload.validate()?;
 
     // Hash password
-    let password_hash = hash(&payload.password, DEFAULT_COST).map_err(|e| {
-        crate::error::AppError::InternalError(format!("Hashing failed: {}", e))
-    })?;
+    let password_hash = hash(&payload.password, DEFAULT_COST)
+        .map_err(|e| crate::error::AppError::InternalError(format!("Hashing failed: {}", e)))?;
 
     // Create a user in the database
     let user = sqlx::query_as::<_, User>(
@@ -37,9 +36,7 @@ pub async fn register(
     .map_err(|e| {
         // Check if email already exists
         if e.to_string().contains("unique") {
-            crate::error::AppError::ValidationError(
-                validator::ValidationErrors::new(),
-            )
+            crate::error::AppError::ValidationError(validator::ValidationErrors::new())
         } else {
             e.into()
         }
@@ -55,11 +52,7 @@ pub async fn register(
 
     let token = create_token(&claims, &state.config.jwt_secret)?;
 
-    Ok(Json(AuthResponse {
-        token,
-        user_id: user.id.to_string(),
-        email: user.email,
-    }))
+    Ok(Json(AuthResponse { token, user_id: user.id.to_string(), email: user.email }))
 }
 
 // Login existing user
@@ -71,28 +64,19 @@ pub async fn login(
     payload.validate()?;
 
     // Find user by email
-    let user =
-        sqlx::query_as::<_, User>("SELECT * FROM users WHERE email = $1")
-            .bind(&payload.email)
-            .fetch_optional(&state.pool)
-            .await?
-            .ok_or(crate::error::AppError::Unauthorized(
-                "Invalid email or password".to_string(),
-            ))?;
+    let user = sqlx::query_as::<_, User>("SELECT * FROM users WHERE email = $1")
+        .bind(&payload.email)
+        .fetch_optional(&state.pool)
+        .await?
+        .ok_or(crate::error::AppError::Unauthorized("Invalid email or password".to_string()))?;
 
     // Verify password
-    let password_valid = verify(&payload.password, &user.password_hash)
-        .map_err(|e| {
-            crate::error::AppError::InternalError(format!(
-                "Verification failed: {}",
-                e
-            ))
-        })?;
+    let password_valid = verify(&payload.password, &user.password_hash).map_err(|e| {
+        crate::error::AppError::InternalError(format!("Verification failed: {}", e))
+    })?;
 
     if !password_valid {
-        return Err(crate::error::AppError::Unauthorized(
-            "Invalid email or password".to_string(),
-        ));
+        return Err(crate::error::AppError::Unauthorized("Invalid email or password".to_string()));
     }
 
     // Create JWT token
@@ -105,11 +89,7 @@ pub async fn login(
 
     let token = create_token(&claims, &state.config.jwt_secret)?;
 
-    Ok(Json(AuthResponse {
-        token,
-        user_id: user.id.to_string(),
-        email: user.email,
-    }))
+    Ok(Json(AuthResponse { token, user_id: user.id.to_string(), email: user.email }))
 }
 
 // Debug endpoint: decode your own token

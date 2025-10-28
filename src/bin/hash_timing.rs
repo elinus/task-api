@@ -1,5 +1,5 @@
-use std::time::Instant;
 use bcrypt::verify;
+use std::time::Instant;
 
 fn main() {
     println!("##### Hashing Timing! #####");

@@ -1,5 +1,3 @@
-version: '3.x'
-
 services:
   postgres:
     image: postgres:16
